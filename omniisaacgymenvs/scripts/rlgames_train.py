@@ -42,152 +42,158 @@ from omniisaacgymenvs.utils.rlgames.rlgames_utils import RLGPUAlgoObserver, RLGP
 from omniisaacgymenvs.utils.task_util import initialize_task
 from rl_games.common import env_configurations, vecenv
 from rl_games.torch_runner import Runner
-
+##print(rl_games.torch_runner.__file__)
+#breakpoint()
 
 class RLGTrainer:
-    def __init__(self, cfg, cfg_dict):
-        self.cfg = cfg
-        print("self.cfg ", self.cfg, "\n")
-        self.cfg_dict = cfg_dict
-        print("self.cfg_dict ", self.cfg_dict, "\n")
+    def __init__(self, cfg, cfg_dict): #2
+        #print("rlgames_train.py: construct RLGTrainer\n")
+        self.cfg = cfg
+        ##print("self.cfg ", self.cfg, "\n")
+        self.cfg_dict = cfg_dict
+        ##print("self.cfg_dict ", self.cfg_dict, "\n")
 
-    def launch_rlg_hydra(self, env):
-        # `create_rlgpu_env` is environment construction function which is passed to RL Games and called internally.
-        # We use the helper function here to specify the environment config.
-        print("launch_rlg_hydra\n")
-        self.cfg_dict["task"]["test"] = self.cfg.test
-        print("self.cfg.test ", self.cfg.test, "\n")
-       
-        # register the rl-games adapter to use inside the runner
-        vecenv.register("RLGPU", lambda config_name, num_actors, **kwargs: RLGPUEnv(config_name, num_actors, **kwargs))
-        env_configurations.register("rlgpu", {"vecenv_type": "RLGPU", "env_creator": lambda **kwargs: env})
+    def launch_rlg_hydra(self, env): #3
+        #print("rlgames_train.py: launch_rlg_hydra\n")
+        # `create_rlgpu_env` is environment construction function which is passed to RL Games and called internally.
+        # We use the helper function here to specify the environment config.
+        self.cfg_dict["task"]["test"] = self.cfg.test
+        ##print("self.cfg.test ", self.cfg.test, "\n")
 
-        self.rlg_config_dict = omegaconf_to_dict(self.cfg.train)
-        print("self.rlg_config_dict ", self.rlg_config_dict, "\n")
+        # register the rl-games adapter to use inside the runner
+        vecenv.register("RLGPU", lambda config_name, num_actors, **kwargs: RLGPUEnv(config_name, num_actors, **kwargs))
+        env_configurations.register("rlgpu", {"vecenv_type": "RLGPU", "env_creator": lambda **kwargs: env})
 
-    def run(self, module_path, experiment_dir):
-        print("run\n")
-        self.rlg_config_dict["params"]["config"]["train_dir"] = os.path.join(module_path, "runs")
+        self.rlg_config_dict = omegaconf_to_dict(self.cfg.train)
+        ##print("self.rlg_config_dict ", self.rlg_config_dict, "\n")
 
-        # create runner and set the settings
-        runner = Runner(RLGPUAlgoObserver())
-        print("runner ", runner, "\n")
-        runner.load(self.rlg_config_dict)
-        print("runner ", runner, "\n")
-        runner.reset()
-        print("runner", runner, "\n")
+    def run(self, module_path, experiment_dir): #4 #leads to reset function in vec_env_rlgames.py
+        #print("rlgames_train.py: run\n")
+        self.rlg_config_dict["params"]["config"]["train_dir"] = os.path.join(module_path, "runs")
+        #print("self.rlg_config_dict ", self.rlg_config_dict, "\n")
+        #breakpoint()
 
-        # dump config dict
-        os.makedirs(experiment_dir, exist_ok=True)
-        with open(os.path.join(experiment_dir, "config.yaml"), "w") as f:
-            f.write(OmegaConf.to_yaml(self.cfg))
+        # create runner and set the settings
+        print("rlgames_train.py: create Runner object\n")
+        runner = Runner(RLGPUAlgoObserver()) #leads to tourch_runner.py
+        ##print("runner ", runner, "\n") #<rl_games.torch_runner.Runner object at 0x791fa0d4c940> 
+        runner.load(self.rlg_config_dict)
+        ##print("runner ", runner, "\n") #<rl_games.torch_runner.Runner object at 0x791fa0d4c940> 
+        runner.reset() #leads to reset function in vec_env_rlgames.py
+        ##print("runner ", runner, "\n") #<rl_games.torch_runner.Runner object at 0x791fa0d4c940> 
 
-        runner.run(
-            {"train": not self.cfg.test, "play": self.cfg.test, "checkpoint": self.cfg.checkpoint, "sigma": None}
-        )
+        # dump config dict
+        os.makedirs(experiment_dir, exist_ok=True)
+        with open(os.path.join(experiment_dir, "config.yaml"), "w") as f:
+            f.write(OmegaConf.to_yaml(self.cfg))
+
+        runner.run(
+            {"train": not self.cfg.test, "play": self.cfg.test, "checkpoint": self.cfg.checkpoint, "sigma": None}
+        )
 
 
-@hydra.main(version_base=None, config_name="config", config_path="../cfg")
+
+@hydra.main(version_base=None, config_name="config", config_path="../cfg") #1
 def parse_hydra_configs(cfg: DictConfig):
-    print("parse_hydra_configs\n")
-    print("cfg ", cfg, "\n")
-   
-    time_str = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    #print("rlgames_train.py: parse_hydra_configs\n")
+    ##print("cfg ", cfg, "\n") #a set of config.yaml, AnymalTerrain.yaml, AnymalTerrainPPO.yaml in this order
 
-    headless = cfg.headless
+    time_str = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
 
-    # local rank (GPU id) in a current multi-gpu mode
-    local_rank = int(os.getenv("LOCAL_RANK", "0"))
-    # global rank (GPU id) in multi-gpu multi-node mode
-    global_rank = int(os.getenv("RANK", "0"))
-    if cfg.multi_gpu:
-        cfg.device_id = local_rank
-        cfg.rl_device = f'cuda:{local_rank}'
-    enable_viewport = "enable_cameras" in cfg.task.sim and cfg.task.sim.enable_cameras
+    headless = cfg.headless
 
-    # select kit app file
-    experience = get_experience(headless, cfg.enable_livestream, enable_viewport, cfg.enable_recording, cfg.kit_app)
+    # local rank (GPU id) in a current multi-gpu mode
+    local_rank = int(os.getenv("LOCAL_RANK", "0"))
+    # global rank (GPU id) in multi-gpu multi-node mode
+    global_rank = int(os.getenv("RANK", "0"))
+    if cfg.multi_gpu:
+        cfg.device_id = local_rank
+        cfg.rl_device = f'cuda:{local_rank}'
+    enable_viewport = "enable_cameras" in cfg.task.sim and cfg.task.sim.enable_cameras
 
-    env = VecEnvRLGames(
-        headless=headless,
-        sim_device=cfg.device_id,
-        enable_livestream=cfg.enable_livestream,
-        enable_viewport=enable_viewport or cfg.enable_recording,
-        experience=experience
-    )
-    print("env", env, "\n")
+    # select kit app file
+    experience = get_experience(headless, cfg.enable_livestream, enable_viewport, cfg.enable_recording, cfg.kit_app)
 
-    # parse experiment directory
-    module_path = os.path.abspath(os.path.join(os.path.dirname(omniisaacgymenvs.__file__)))
-    print("module_path", module_path, "\n")
-    experiment_dir = os.path.join(module_path, "runs", cfg.train.params.config.name)
-    print("experiment_dir", experiment_dir, "\n")
+    env = VecEnvRLGames(
+        headless=headless,
+        sim_device=cfg.device_id,
+        enable_livestream=cfg.enable_livestream,
+        enable_viewport=enable_viewport or cfg.enable_recording,
+        experience=experience
+    )
+    ##print("env", env, "\n") #<VecEnvRLGames instance>
 
-    # use gym RecordVideo wrapper for viewport recording
-    if cfg.enable_recording:
-        if cfg.recording_dir == '':
-            videos_dir = os.path.join(experiment_dir, "videos")
-        else:
-            videos_dir = cfg.recording_dir
-        video_interval = lambda step: step % cfg.recording_interval == 0
-        video_length = cfg.recording_length
-        env.is_vector_env = True
-        if env.metadata is None:
-            env.metadata = {"render_modes": ["rgb_array"], "render_fps": cfg.recording_fps}
-        else:
-            env.metadata["render_modes"] = ["rgb_array"]
-            env.metadata["render_fps"] = cfg.recording_fps
-        env = gym.wrappers.RecordVideo(
-            env, video_folder=videos_dir, step_trigger=video_interval, video_length=video_length
-        )
+    # parse experiment directory
+    module_path = os.path.abspath(os.path.join(os.path.dirname(omniisaacgymenvs.__file__)))
+    ##print("module_path", module_path, "\n") #/home/user/OmniIsaacGymEnvs/omniisaacgymenvs 
+    experiment_dir = os.path.join(module_path, "runs", cfg.train.params.config.name)
+    ##print("experiment_dir", experiment_dir, "\n") #/home/user/OmniIsaacGymEnvs/omniisaacgymenvs/runs/AnymalTerrain
 
-    # ensure checkpoints can be specified as relative paths
-    print("cfg.checkpoint", cfg.checkpoint, "\n")
-    if cfg.checkpoint:
-        cfg.checkpoint = retrieve_checkpoint_path(cfg.checkpoint)
-        if cfg.checkpoint is None:
-            quit()
+    # use gym RecordVideo wrapper for viewport recording
+    if cfg.enable_recording:
+        if cfg.recording_dir == '':
+            videos_dir = os.path.join(experiment_dir, "videos")
+        else:
+            videos_dir = cfg.recording_dir
+        video_interval = lambda step: step % cfg.recording_interval == 0
+        video_length = cfg.recording_length
+        env.is_vector_env = True
+        if env.metadata is None:
+            env.metadata = {"render_modes": ["rgb_array"], "render_fps": cfg.recording_fps}
+        else:
+            env.metadata["render_modes"] = ["rgb_array"]
+            env.metadata["render_fps"] = cfg.recording_fps
+        env = gym.wrappers.RecordVideo(
+            env, video_folder=videos_dir, step_trigger=video_interval, video_length=video_length
+        )
 
-    cfg_dict = omegaconf_to_dict(cfg)
-    print_dict(cfg_dict)
+    # ensure checkpoints can be specified as relative paths
+    ##print("cfg.checkpoint", cfg.checkpoint, "\n") #nothing at least in training
+    if cfg.checkpoint:
+        cfg.checkpoint = retrieve_checkpoint_path(cfg.checkpoint)
+        if cfg.checkpoint is None:
+            quit()
 
-    # sets seed. if seed is -1 will pick a random one
-    from omni.isaac.core.utils.torch.maths import set_seed
-    cfg.seed = cfg.seed + global_rank if cfg.seed != -1 else cfg.seed
-    cfg.seed = set_seed(cfg.seed, torch_deterministic=cfg.torch_deterministic)
-    cfg_dict["seed"] = cfg.seed
+    cfg_dict = omegaconf_to_dict(cfg) #convert an OmegaConf object (cfg) into a Python dictionary (cfg_dict).
+    ##print_dict(cfg_dict) #dictionary version of cfg, easy to read
 
-    task = initialize_task(cfg_dict, env)
+    # sets seed. if seed is -1 will pick a random one
+    from omni.isaac.core.utils.torch.maths import set_seed
+    cfg.seed = cfg.seed + global_rank if cfg.seed != -1 else cfg.seed
+    cfg.seed = set_seed(cfg.seed, torch_deterministic=cfg.torch_deterministic)
+    cfg_dict["seed"] = cfg.seed
 
-    if cfg.wandb_activate and global_rank == 0:
-        # Make sure to install WandB if you actually use this.
-        import wandb
+    task = initialize_task(cfg_dict, env)
 
-        run_name = f"{cfg.wandb_name}_{time_str}"
+    if cfg.wandb_activate and global_rank == 0:
+        # Make sure to install WandB if you actually use this.
+        import wandb
 
-        wandb.init(
-            project=cfg.wandb_project,
-            group=cfg.wandb_group,
-            entity=cfg.wandb_entity,
-            config=cfg_dict,
-            sync_tensorboard=True,
-            name=run_name,
-            resume="allow",
-        )
+        run_name = f"{cfg.wandb_name}_{time_str}"
 
-    torch.cuda.set_device(local_rank)
-    rlg_trainer = RLGTrainer(cfg, cfg_dict)
-    print("rlg_trainer", rlg_trainer, "\n")
-    rlg_trainer.launch_rlg_hydra(env)
-    rlg_trainer.run(module_path, experiment_dir)
-    env.close()
+        wandb.init(
+            project=cfg.wandb_project,
+            group=cfg.wandb_group,
+            entity=cfg.wandb_entity,
+            config=cfg_dict,
+            sync_tensorboard=True,
+            name=run_name,
+            resume="allow",
+        )
 
-    if cfg.wandb_activate and global_rank == 0:
-        wandb.finish()
+    torch.cuda.set_device(local_rank)
+    rlg_trainer = RLGTrainer(cfg, cfg_dict)
+    ##print("rlg_trainer", rlg_trainer, "\n")
+    rlg_trainer.launch_rlg_hydra(env)
+    rlg_trainer.run(module_path, experiment_dir)
+    env.close()
+
+    if cfg.wandb_activate and global_rank == 0:
+        wandb.finish()
 
 
 if __name__ == "__main__":
-    parse_hydra_configs()
+    parse_hydra_configs()
 
 
 
