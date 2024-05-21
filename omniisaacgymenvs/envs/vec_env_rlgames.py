@@ -35,106 +35,114 @@ from omni.isaac.gym.vec_env import VecEnvBase
 
 # VecEnv Wrapper for RL training
 class VecEnvRLGames(VecEnvBase):
-    def _process_data(self):
-        print("_process_data\n")
-        self._obs = torch.clamp(self._obs, -self._task.clip_obs, self._task.clip_obs).to(self._task.rl_device)
-        self._rew = self._rew.to(self._task.rl_device)
-        self._states = torch.clamp(self._states, -self._task.clip_obs, self._task.clip_obs).to(self._task.rl_device)
-        self._resets = self._resets.to(self._task.rl_device)
-        self._extras = self._extras
+    def _process_data(self): #4
+        #print("vec_env_rlgames.py: _process_data\n")
+        self._obs = torch.clamp(self._obs, -self._task.clip_obs, self._task.clip_obs).to(self._task.rl_device)
+        self._rew = self._rew.to(self._task.rl_device)
+        self._states = torch.clamp(self._states, -self._task.clip_obs, self._task.clip_obs).to(self._task.rl_device)
+        self._resets = self._resets.to(self._task.rl_device)
+        self._extras = self._extras
 
-        print("self._obs ", self._obs, "\n")
-        print("self._rew ", self._rew, "\n")
-        print("self._states ", self._states, "\n")
-        print("self._resets ", self._resets, "\n")
-        print("self._extras ", self._extras, "\n")
+        # #print("self._obs ", self._obs.shape, "\n") #(num_envs, 188) self._num_observations = 188
+        # #print("self._rew ", self._rew.shape, "\n") #(num_envs)
+        # #print("self._states ", self._states.shape, "\n") #(num_envs, 0)
+        # #print("self._resets ", self._resets.shape, "\n") #(num_envs)
+        # #print("self._extras ", self._extras, "\n") #extra information such as episode, each reward and terrain level
 
-    def set_task(self, task, backend="numpy", sim_params=None, init_sim=True, rendering_dt=1.0 / 60.0) -> None:
-        print("set_task\n")
-        super().set_task(task, backend, sim_params, init_sim, rendering_dt)
 
-        self.num_states = self._task.num_states
-        self.state_space = self._task.state_space
-       
-        print("self.num_states ", self.num_states, "\n")
-        print("self.state_space ", self.state_space, "\n")
+    def set_task(self, task, backend="numpy", sim_params=None, init_sim=True, rendering_dt=1.0 / 60.0) -> None: #1
+        #print("vec_env_rlgames.py: set_task\n")
+        super().set_task(task, backend, sim_params, init_sim, rendering_dt)
 
-    def step(self, actions):
-        print("step\n")
-        # only enable rendering when we are recording, or if the task already has it enabled
-        to_render = self._render
-        if self._record:
-            if not hasattr(self, "step_count"):
-                self.step_count = 0
-            if self.step_count % self._task.cfg["recording_interval"] == 0:
-                self.is_recording = True
-                self.record_length = 0
-            if self.is_recording:
-                self.record_length += 1
-                if self.record_length > self._task.cfg["recording_length"]:
-                    self.is_recording = False
-            if self.is_recording:
-                to_render = True
-            else:
-                if (self._task.cfg["headless"] and not self._task.enable_cameras and not self._task.cfg["enable_livestream"]):
-                    to_render = False
-            self.step_count += 1
+        self.num_states = self._task.num_states
+        self.state_space = self._task.state_space
+        # #print("self.num_states ", self.num_states, "\n") #self.num_states  0  at least first
+        # #print("self.state_space ", self.state_space, "\n") #Box([], [], (0,), float32)
 
-        if self._task.randomize_actions:
-            actions = self._task._dr_randomizer.apply_actions_randomization(
-                actions=actions, reset_buf=self._task.reset_buf
-            )
 
-        actions = torch.clamp(actions, -self._task.clip_actions, self._task.clip_actions).to(self._task.device)
-        print("actions ", actions, "\n")
-       
-        self._task.pre_physics_step(actions)
+    def step(self, actions): #3 #keep repeating this function "step" so it's like "step"->"_process_data"->"step"...-> fps step: 9280 fps step and policy inference: 9159 fps total: 8843 epoch: 1/2000 frames: 0
+        #print("vec_env_rlgames.py: step\n")
+        # only enable rendering when we are recording, or if the task already has it enabled
+        to_render = self._render
+        if self._record:
+            if not hasattr(self, "step_count"):
+                self.step_count = 0
+            if self.step_count % self._task.cfg["recording_interval"] == 0:
+                self.is_recording = True
+                self.record_length = 0
+            if self.is_recording:
+                self.record_length += 1
+                if self.record_length > self._task.cfg["recording_length"]:
+                    self.is_recording = False
+            if self.is_recording:
+                to_render = True
+            else:
+                if (self._task.cfg["headless"] and not self._task.enable_cameras and not self._task.cfg["enable_livestream"]):
+                    to_render = False
+            self.step_count += 1
 
-        if (self.sim_frame_count + self._task.control_frequency_inv) % self._task.rendering_interval == 0:
-            for _ in range(self._task.control_frequency_inv - 1):
-                self._world.step(render=False)
-                self.sim_frame_count += 1
-            self._world.step(render=to_render)
-            self.sim_frame_count += 1
-        else:
-            for _ in range(self._task.control_frequency_inv):
-                self._world.step(render=False)
-                self.sim_frame_count += 1
+        if self._task.randomize_actions:
+            #randomly sample actions
+            actions = self._task._dr_randomizer.apply_actions_randomization(
+                actions=actions, reset_buf=self._task.reset_buf
+            )
 
-        self._obs, self._rew, self._resets, self._extras = self._task.post_physics_step()
-        print("self._obs ", self._obs, "\n")
-        print("self._rew ", self._rew, "\n")
-        print("self._states ", self._states, "\n")
-        print("self._resets ", self._resets, "\n")
-        print("self._extras ", self._extras, "\n")
+        actions = torch.clamp(actions, -self._task.clip_actions, self._task.clip_actions).to(self._task.device) #clamp operation(specify the max and minumum) on randomized actions
+        ##print("actions ", actions, "\n") #initially all zero
+        #breakpoint()
+        ##print("actions ", actions.shape, "\n") #(num_envs, 12) self._num_actions = 12
 
-        if self._task.randomize_observations:
-            self._obs = self._task._dr_randomizer.apply_observations_randomization(
-                observations=self._obs.to(device=self._task.rl_device), reset_buf=self._task.reset_buf
-            )
 
-        self._states = self._task.get_states()
-        self._process_data()
+        self._task.pre_physics_step(actions) #leads to pre_physics_step function in anymal_terrain.py
 
-        obs_dict = {"obs": self._obs, "states": self._states}
-        print("obs_dict ", obs_dict, "\n")
+        if (self.sim_frame_count + self._task.control_frequency_inv) % self._task.rendering_interval == 0:
+            for _ in range(self._task.control_frequency_inv - 1):
+                self._world.step(render=False)
+                self.sim_frame_count += 1
+            self._world.step(render=to_render)
+            self.sim_frame_count += 1
+        else:
+            for _ in range(self._task.control_frequency_inv):
+                self._world.step(render=False)
+                self.sim_frame_count += 1
 
-        return obs_dict, self._rew, self._resets, self._extras
+        self._obs, self._rew, self._resets, self._extras = self._task.post_physics_step()
 
-    def reset(self, seed=None, options=None):
-        print("reset\n")
-        """Resets the task and applies default zero actions to recompute observations and states."""
-        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        print(f"[{now}] Running RL reset")
+        # #print("self._obs ", self._obs.shape, "\n") #(num_envs, 188) self._num_observations = 188
+        # #print("self._rew ", self._rew.shape, "\n") #(num_envs)
+        # #print("self._resets ", self._resets.shape, "\n") #(num_envs)
+        ##print("self._extras ", self._extras, "\n") #extra information such as episode, each reward and terrain level
 
-        self._task.reset()
-        actions = torch.zeros((self.num_envs, self._task.num_actions), device=self._task.rl_device)
-        print("actions ", actions, "\n")
-        obs_dict, _, _, _ = self.step(actions)
-        print("obs_dict ", obs_dict, "\n")
+        if self._task.randomize_observations:
+            self._obs = self._task._dr_randomizer.apply_observations_randomization(
+                observations=self._obs.to(device=self._task.rl_device), reset_buf=self._task.reset_buf
+            )
 
-        return obs_dict
+        self._states = self._task.get_states()
+        self._process_data()
 
+        obs_dict = {"obs": self._obs, "states": self._states}
+        # #print("self._obs ", self._obs.shape, "\n") #(num_envs, 188) self._num_observations = 188
+        # #print("self._states ", self._states.shape, "\n") #(num_envs, 0)
+        ##print("obs_dict ", obs_dict.shape, "\n")
+
+        return obs_dict, self._rew, self._resets, self._extras
+
+    def reset(self, seed=None, options=None): #2
+        #print("vec_env_rlgames.py: reset\n")
+        """Resets the task and applies default zero actions to recompute observations and states."""
+        now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        #print(f"[{now}] Running RL reset")
+
+        self._task.reset()
+        actions = torch.zeros((self.num_envs, self._task.num_actions), device=self._task.rl_device)
+        ##print("actions ", actions, "\n") #all zero
+        #breakpoint()
+        ##print("actions ", actions.shape, "\n") #(num_envs, 12) self._num_actions = 12
+        obs_dict, _, _, _ = self.step(actions)
+        ##print("obs_dict ", obs_dict, "\n")
+
+        return obs_dict
 
 
 # from datetime import datetime
