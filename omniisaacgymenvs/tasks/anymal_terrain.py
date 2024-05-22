@@ -41,6 +41,13 @@ from omniisaacgymenvs.tasks.utils.anymal_terrain_generator import *
 from omniisaacgymenvs.utils.terrain_utils.terrain_utils import *
 from pxr import UsdLux, UsdPhysics
 
+# import logging
+# logging.basicConfig(level=logging.WARNING)
+
+# from logging import (DEBUG, INFO, basicConfig, critical, debug, error, exception, info, warning)
+# basicConfig(
+#         level=DEBUG, format='[{levelname:.4}] : {message}', style='{')
+
 
 class AnymalTerrainTask(RLTask):
     def __init__(self, name, sim_config, env, offset=None) -> None: #1
@@ -134,7 +141,8 @@ class AnymalTerrainTask(RLTask):
         v_lin = self._task_cfg["env"]["baseInitState"]["vLinear"]
         v_ang = self._task_cfg["env"]["baseInitState"]["vAngular"]
         self.base_init_state = pos + rot + v_lin + v_ang
-        ###print("self.base_init_state ", self.base_init_state,"\n")
+        #print("self.base_init_state ", self.base_init_state,"\n")
+        #default: [0.0, 0.0, 0.62, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0] 
 
         # default joint positions
         self.named_default_joint_angles = self._task_cfg["env"]["defaultJointAngles"]
@@ -159,8 +167,10 @@ class AnymalTerrainTask(RLTask):
         #self._num_envs = 64 ##horizon_length: 64, minibatch_size: 4096
         ###print("self._num_envs ", self._num_envs,"\n")
         #minibatch_size: 16384
+        #logging.debug("Check the number of environments")
         print("self._num_envs ", self._num_envs,"\n")
-        breakpoint()
+        #debug("DEBUG level")
+        #breakpoint()
 
         self._task_cfg["sim"]["default_physics_material"]["static_friction"] = self._task_cfg["env"]["terrain"][
             "staticFriction"
@@ -228,13 +238,14 @@ class AnymalTerrainTask(RLTask):
         super().set_up_scene(scene, collision_filter_global_paths=["/World/terrain"])
         self._anymals = AnymalView(
             prim_paths_expr="/World/envs/.*/anymal", name="anymal_view", track_contact_forces=True
+            #prim_paths_expr="/World/a1/.*/anymal", name="anymal_view", track_contact_forces=True
         )
         scene.add(self._anymals)
         scene.add(self._anymals._knees)
         scene.add(self._anymals._base)
 
-    def initialize_views(self, scene):
-        ##print("anymal_terrain.py: initialize_views\n")
+    def initialize_views(self, scene): #leads to AnymalView
+        #print("anymal_terrain.py: initialize_views\n")
         # initialize terrain variables even if we do not need to re-create the terrain mesh
         self.get_terrain(create_mesh=False)
 
@@ -245,14 +256,19 @@ class AnymalTerrainTask(RLTask):
             scene.remove_object("knees_view", registry_only=True)
         if scene.object_exists("base_view"):
             scene.remove_object("base_view", registry_only=True)
-        self._anymals = AnymalView(
+        #print("leads to AnymalView")
+        self._anymals = AnymalView( #leads to AnymalView
             prim_paths_expr="/World/envs/.*/anymal", name="anymal_view", track_contact_forces=True
+            #prim_paths_expr="/World/a1/.*/anymal", name="anymal_view", track_contact_forces=True
+            #prim_paths_expr="/World/a1/*", name="anymal_view", track_contact_forces=True
+            #prim_paths_expr = ["/World/a1/base", "/World/a1/trunk", "/World/a1/FL_hip", "/World/a1/FR_hip", "/World/a1/RL_hip", "/World/a1/RR_hip"],  name="anymal_view", track_contact_forces=True
         )
         scene.add(self._anymals)
         scene.add(self._anymals._knees)
         scene.add(self._anymals._base)
 
-        breakpoint()
+        #print("scence ", scene)
+        #breakpoint()
 
     def get_terrain(self, create_mesh=True): #5
         ##print("anymal_terrain.py: get_terrain\n")
@@ -271,17 +287,25 @@ class AnymalTerrainTask(RLTask):
     def get_anymal(self): #7
         ##print("anymal_terrain.py: get_anymal\n")
         anymal_translation = torch.tensor([0.0, 0.0, 0.66])
+        #anymal_translation = torch.tensor([0.0, 0.0, 0.0])
         anymal_orientation = torch.tensor([1.0, 0.0, 0.0, 0.0])
+        #print("self.default_zero_env_path ", self.default_zero_env_path, "\n") #/World/envs/env_0
         anymal = Anymal(
             prim_path=self.default_zero_env_path + "/anymal",
             name="anymal",
+            #prim_path=self.default_zero_env_path + "/a1",
+            #name="a1",
+            #prim_path=self.default_zero_env_path,
+            #name="anymal",
             translation=anymal_translation,
             orientation=anymal_orientation,
         )
+        
         ###print("anymal ", anymal, "\n") #anymal  <omniisaacgymenvs.robots.articulations.anymal.Anymal object at 0x7215eb3fa860>
 
         self._sim_config.apply_articulation_settings(
             "anymal", get_prim_at_path(anymal.prim_path), self._sim_config.parse_actor_config("anymal")
+            #"a1", get_prim_at_path(anymal.prim_path), self._sim_config.parse_actor_config("a1")
         )
         anymal.set_anymal_properties(self._stage, anymal.prim)
         anymal.prepare_contacts(self._stage, anymal.prim)
@@ -292,8 +316,9 @@ class AnymalTerrainTask(RLTask):
             angle = self.named_default_joint_angles[name]
             self.default_dof_pos[:, i] = angle
 
+    #at the very first
     def post_reset(self): #8
-        #print("anymal_terrain.py: post_reset\n")
+        print("anymal_terrain.py: post_reset\n")
         #breakpoint()
         self.base_init_state = torch.tensor(
             self.base_init_state, dtype=torch.float, device=self.device, requires_grad=False
@@ -309,6 +334,9 @@ class AnymalTerrainTask(RLTask):
         self.commands = torch.zeros(
             self.num_envs, 4, dtype=torch.float, device=self.device, requires_grad=False
         )  # x vel, y vel, yaw vel, heading
+        #print("self.commands ", self.commands.shape, "\n") #(num_envs, 4)
+        #breakpoint()
+
         self.commands_scale = torch.tensor(
             [self.lin_vel_scale, self.lin_vel_scale, self.ang_vel_scale],
             device=self.device,
@@ -348,29 +376,45 @@ class AnymalTerrainTask(RLTask):
         self.reset_idx(indices) #11
         self.init_done = True
 
+    #environment reset. After this, robots are moved to the initial location
     def reset_idx(self, env_ids): #11 and if in post_physics_step function (15)
-        ##print("anymal_terrain.py: reset_idx\n")
+        print("anymal_terrain.py: reset_idx\n")
+        #print("env_ids ", env_ids, "\n") #This env_ids is used to identify which robot I am going to use
+        #With one robot, env_ids: tensor([0], device='cuda:0') 
+        #breakpoint()
+
+        #Converts env_ids to int32 type.
         indices = env_ids.to(dtype=torch.int32)
 
+        #Generates random offsets for positions and velocities for the degrees of freedom (DOFs) of the robots being reset.
         positions_offset = torch_rand_float(0.5, 1.5, (len(env_ids), self.num_dof), device=self.device)
         velocities = torch_rand_float(-0.1, 0.1, (len(env_ids), self.num_dof), device=self.device)
 
+        #Resets the positions and velocities of the DOFs for the specified environments.
         self.dof_pos[env_ids] = self.default_dof_pos[env_ids] * positions_offset
         self.dof_vel[env_ids] = velocities
 
         self.update_terrain_level(env_ids)
+        #Resets the base position
         self.base_pos[env_ids] = self.base_init_state[0:3]
-        self.base_pos[env_ids, 0:3] += self.env_origins[env_ids]
+        #Add random offsets to ensure variety
+        #self.base_pos[env_ids, 0:3] += self.env_origins[env_ids] #comment out for inference
         self.base_pos[env_ids, 0:2] += torch_rand_float(-0.5, 0.5, (len(env_ids), 2), device=self.device)
+        #Resets the base orientation (quaternion) and velocities.
         self.base_quat[env_ids] = self.base_init_state[3:7]
         self.base_velocities[env_ids] = self.base_init_state[7:]
 
+        #Sets the new positions, orientations, velocities, joint positions, and joint velocities in the simulation for the specified environments.
         self._anymals.set_world_poses(
             positions=self.base_pos[env_ids].clone(), orientations=self.base_quat[env_ids].clone(), indices=indices
         )
         self._anymals.set_velocities(velocities=self.base_velocities[env_ids].clone(), indices=indices)
         self._anymals.set_joint_positions(positions=self.dof_pos[env_ids].clone(), indices=indices)
         self._anymals.set_joint_velocities(velocities=self.dof_vel[env_ids].clone(), indices=indices)
+
+
+        #print("self.commands[env_ids] ", self.commands[env_ids], "\n")
+        #tensor([[-0.3703, -0.5490, -0.0423, -0.8895]], device='cuda:0')
 
         #Randomly generates commands for x, y, and yaw (rotation around the vertical axis).
         self.commands[env_ids, 0] = torch_rand_float(
@@ -383,10 +427,20 @@ class AnymalTerrainTask(RLTask):
             self.command_yaw_range[0], self.command_yaw_range[1], (len(env_ids), 1), device=self.device
         ).squeeze()
 
-        #Sets small commands to zero if the norm of x and y commands is less than 0.25.
+        #Sets small commands to zero if the norm of x and y commands is less than 0.25 ensuring only significant commands are applied.
         self.commands[env_ids] *= (torch.norm(self.commands[env_ids, :2], dim=1) > 0.25).unsqueeze(
             1
         ) 
+
+        #print("self.commands[env_ids] ", self.commands[env_ids], "\n") #self.commands[env_ids, 2] (yaw vel) does not change.  x vel, y vel, yaw vel, heading
+        #Because this function is from initial state and end state, meaning from one point to another and then reset. So not necessary to change yew vel throughout one episode
+        #tensor([[-0.5366, -0.4517, -0.0423, -0.6778]], device='cuda:0')
+        #breakpoint()
+
+        #desired commands (self.commands[env_ids, 2] changes every time)
+        self.commands[env_ids]=torch.tensor([[0.9000, 0.0, -0.1824, 0.9000]], device='cuda:0')
+
+        #Resets the last actions, DOF velocities, feet air time, progress buffer, and reset buffer for the specified environments.
         # set small commands to zero
         self.last_actions[env_ids] = 0.0
         self.last_dof_vel[env_ids] = 0.0
@@ -395,6 +449,7 @@ class AnymalTerrainTask(RLTask):
         self.reset_buf[env_ids] = 1
 
         # fill extras
+        #Updates the extras dictionary with mean episode rewards and terrain levels for the environments being reset.
         self.extras["episode"] = {}
         for key in self.episode_sums.keys():
             self.extras["episode"]["rew_" + key] = (
@@ -436,16 +491,17 @@ class AnymalTerrainTask(RLTask):
         self.base_velocities = self._anymals.get_velocities(clone=False)
         self.knee_pos, self.knee_quat = self._anymals._knees.get_world_poses(clone=False)
 
-    #Based on a sampled action option, calculate the torques and set the joints as the torques, updating state dof state tensors
+    #(num_envs, 12) self._num_actions = 12
+    #prepare and apply actions before the physics simulation steps forward. 
     def pre_physics_step(self, actions): #13 #comes from step function in vec_env_rlgames.py
         #print("anymal_terrain.py: pre_physics_step\n")
 
         if not self.world.is_playing():
             return
 
-        self.actions = actions.clone().to(self.device) #clone, exactly the same as actions
+        self.actions = actions.clone().to(self.device) #clone, exactly the same as actions. Cloning ensures the original actions tensor remains unchanged.
         ###print("self.actions ", self.actions.shape, "\n")
-        for i in range(self.decimation):
+        for i in range(self.decimation): #decimation: 4,  Number of control action updates @ sim DT per policy DT
             if self.world.is_playing():
                 torques = torch.clip(
                     self.Kp * (self.action_scale * self.actions + self.default_dof_pos - self.dof_pos)
@@ -453,26 +509,30 @@ class AnymalTerrainTask(RLTask):
                     -80.0,
                     80.0,
                 )
-                self._anymals.set_joint_efforts(torques)
-                self.torques = torques
-                SimulationContext.step(self.world, render=False)
-                self.refresh_dof_state_tensors() #14
+                self._anymals.set_joint_efforts(torques) # The computed torques are applied to the robot's joints.
+                self.torques = torques 
+                SimulationContext.step(self.world, render=False) #The simulation steps forward by one step.
+                self.refresh_dof_state_tensors() #14 #The DOF state tensors are refreshed to update the current positions and velocities.
 
     #Actually apply the torques to the robot and get the observation
+    #process data after the physics simulation step has been completed. 
+    #This function updates various state variables, computes necessary metrics, and prepares observations for the next step
     def post_physics_step(self): #15
         #print("anymal_terrain.py: post_physics_step\n")
-        self.progress_buf[:] += 1
+        self.progress_buf[:] += 1 #Increment the progress buffer for each environment to track the number of steps taken.
 
         if self.world.is_playing():
 
+            #Update the degrees of freedom (DOF) and body state tensors to reflect the latest state after the physics step.
             self.refresh_dof_state_tensors() #14
             self.refresh_body_state_tensors() #16
 
             self.common_step_counter += 1
-            if self.common_step_counter % self.push_interval == 0:
+            #If the counter reaches the push interval, apply a push to the robots to introduce disturbances or variability in the environment.
+            if self.common_step_counter % self.push_interval == 0: 
                 self.push_robots()
 
-            # prepare quantities
+            # prepare quantities for state update
             self.base_lin_vel = quat_rotate_inverse(self.base_quat, self.base_velocities[:, 0:3])
             self.base_ang_vel = quat_rotate_inverse(self.base_quat, self.base_velocities[:, 3:6])
             self.projected_gravity = quat_rotate_inverse(self.base_quat, self.gravity_vec)
@@ -484,8 +544,8 @@ class AnymalTerrainTask(RLTask):
             self.get_states()
             self.calculate_metrics() #19
 
-            env_ids = self.reset_buf.nonzero(as_tuple=False).flatten()
-            if len(env_ids) > 0:
+            env_ids = self.reset_buf.nonzero(as_tuple=False).flatten() #Identify environments that need to be reset based on the reset buffer.
+            if len(env_ids) > 0: 
                 self.reset_idx(env_ids) 
 
             self.get_observations() #20
@@ -625,8 +685,9 @@ class AnymalTerrainTask(RLTask):
             (
                 self.base_lin_vel * self.lin_vel_scale, #(num_envs, 3)
                 self.base_ang_vel * self.ang_vel_scale, #(num_envs, 3)
-                self.projected_gravity, #(num_envs, 3)
-                self.commands[:, :3] * self.commands_scale, #(num_envs, 3)
+                self.projected_gravity, #(num_envs, 3) 
+                #For inference (1, 188), scaled commmands are located in 10th, 11th and 12th
+                self.commands[:, :3] * self.commands_scale, #(num_envs, 3) #x vel, y vel, yaw vel
                 self.dof_pos * self.dof_pos_scale, #(num_envs, 12)
                 self.dof_vel * self.dof_vel_scale, #(num_envs, 12)
                 heights, #(num_envs, 140)
@@ -635,7 +696,9 @@ class AnymalTerrainTask(RLTask):
             dim=-1,
         )
 
-        ##print("self.obs_buf  ", self.obs_buf.shape , "\n") #(num_envs, 188)
+        #print("self.obs_buf  ", self.obs_buf, "\n") #(num_envs, 188) #(1, 188) for inference
+        #print("self.commands ", self.commands) #tensor([[-0.3703, -0.5490, -0.1824, -0.8895]], device='cuda:0')
+        #print("scaled commands ", self.commands[:, :3] * self.commands_scale) #tensor([[-0.7406, -1.0981, -0.0486]], device='cuda:0')
 
     def get_ground_heights_below_knees(self):
         ##print("anymal_terrain.py: get_ground_heights_below_knees\n")
@@ -723,6 +786,7 @@ def get_axis_params(value, axis_idx, x_value=0.0, dtype=float, n_dims=3): #10
     params = np.where(zs == 1.0, value, zs)
     params[0] = x_value
     return list(params.astype(dtype))
+
 
 
 
